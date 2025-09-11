@@ -8,11 +8,13 @@ import {
 } from "@gathertown/gather-game-client";
 import { nanoid } from "nanoid";
 import { Pathfinder } from "./pathfinder";
+import { PetAI } from "./follower";
 // replace the global WebSocket with the isomorphic-ws
 global.WebSocket = require("isomorphic-ws");
 
 // replace with your spaceId, that you can edit
 const SPACE_ID = "k1s3wHMOVDoLHVCo\\fstest";
+const TRAVELING_TIME = 700; // 1 block per 500 ms
 
 const game = new Game(SPACE_ID, () =>
   Promise.resolve({ apiKey: process.env.GATHER_API_KEY ?? "" })
@@ -79,9 +81,27 @@ game.waitForInit().then(() => {
     );
   };
 
-  const handleMove = debounce((playerMoves: PlayerMoves) => {
-    console.log("player", playerMoves);
+  const ai = new PetAI(TRAVELING_TIME);
+  ai.subscribeToMovement((segment, travelingTime) => {
+    console.log("AI moving", segment);
 
+    pets.forEach((objId) => {
+      game.moveMapObject(
+        me.map,
+        objId,
+        {
+          x: segment.b.x ?? 0,
+          y: segment.b.y ?? 0,
+          xOffset: 0,
+          yOffset: 0,
+        },
+        travelingTime,
+        "Linear"
+      );
+    });
+  });
+
+  const handleMove = debounce((playerMoves: PlayerMoves) => {
     if (playerMoves.mapId) {
       console.log("player moved to a new map");
 
@@ -102,24 +122,10 @@ game.waitForInit().then(() => {
         x: playerMoves.x ?? 0,
         y: playerMoves.y ?? 0,
       });
-      console.log("paths", paths?.map(p => {
-        return { x: p.a.x, y: p.a.y, direction: p.direction, distance: Math.sqrt(Math.pow(p.a.x - p.b.x, 2) + Math.pow(p.a.y - p.b.y, 2)) }
-      }));
-
-      game.moveMapObject(
-        me.map,
-        objId,
-        {
-          x: playerMoves.x ?? 0,
-          y: playerMoves.y ?? 0,
-          xOffset: 0,
-          yOffset: 0,
-        },
-        1000,
-        "Linear"
-      );
+      // TODO: This will not work with multiple pets
+      ai.queueMovement(paths ?? []);
     });
-  }, 500);
+  }, 250);
 
   // claim pets by storing them in a set
   game.subscribeToEvent(
