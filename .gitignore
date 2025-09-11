@@ -3,3 +3,5 @@ build/
 sprite/
 assets/*.png
 assets/*.json
+
+.DS_Store

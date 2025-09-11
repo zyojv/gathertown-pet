@@ -57,6 +57,16 @@ const img2 = path.join(dir, "Walk-Anim.png");
 
 console.log(img1);
 
+sharp(img1)
+  .extract({
+    top: 0,
+    left: 0,
+    width: walk.FrameWidth,
+    height: walk.FrameHeight,
+  })
+  .png()
+  .pipe(fs.createWriteStream(output + "-normal.png"));
+
 // sharp(img1)
 //   .extract({
 //     top: 0,
