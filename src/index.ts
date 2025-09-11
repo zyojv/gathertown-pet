@@ -52,7 +52,7 @@ game.waitForInit().then(() => {
   const me = game.getMyPlayer();
   // isPet :: MapObject -> Bool
   const isPet = (obj: MapObject | WireObject) =>
-    obj.objectPlacerId === me.id && obj._name === "PetMon";
+    obj.objectPlacerId === me.id && obj.extensionClass === "PetMon";
   const clearPets = () => {
     deleteObjects(isPet);
     pets.clear();
@@ -122,7 +122,7 @@ game.waitForInit().then(() => {
 
   const handleMove = debounce((playerMoves: PlayerMoves) => {
     if (playerMoves.mapId) {
-      // console.log("player moved to a new map");
+      console.log("player moved to a new map");
 
       // load the collision map into the pathfinder
       loadMaps(playerMoves.mapId);
@@ -157,7 +157,7 @@ game.waitForInit().then(() => {
         .filter(([_, obj]) => isPet(obj))
         .filter(([_, obj]) => obj.id)
         .forEach(([key, obj]) => {
-          // console.log("found a pet!", obj.id);
+          console.log("found a pet!", obj.id);
 
           pets.add(obj.id!);
           petsObjectKes.set(obj.id!, key);
@@ -250,7 +250,7 @@ const debounce = <T extends unknown[]>(
 const createPet = (me: Player) => {
   game.addObject(me.map, {
     _tags: ["pet-mon"],
-    _name: "PetMon",
+    // _name: "PetMon",
     extensionClass: "PetMon",
     id: "PETMON_" + nanoid(),
     type: InteractionEnum_ENUM.EXTENSION,
@@ -276,7 +276,7 @@ const deleteObjects = (
     Object.entries(game.partialMaps[map].objects ?? {})
       .filter(([_, obj]) => filter(obj))
       .forEach(([key]) => {
-        // console.log("cleaning up old object", key);
+        console.log("cleaning up old object", key);
         game.deleteObjectByKey(map, key);
       });
   });
