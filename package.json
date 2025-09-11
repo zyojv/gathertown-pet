@@ -1,0 +1,22 @@
+{
+  "name": "gathertown-pet",
+  "version": "2.0.1",
+  "description": "",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "start": "tsc -b && node build/src/index.js",
+    "dev": "tsc -b -w"
+  },
+  "author": "zyojv",
+  "license": "MIT",
+  "dependencies": {
+    "@gathertown/gather-game-client": "42.0.0",
+    "@types/node": "^24.3.1",
+    "isomorphic-ws": "^4.0.1",
+    "nanoid": "^5.1.5",
+    "ws": "^8.2.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
