@@ -1,2 +1,5 @@
 node_modules/
 build/
+sprite/
+assets/*.png
+assets/*.json
