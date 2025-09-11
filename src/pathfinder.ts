@@ -46,22 +46,21 @@ export class Pathfinder {
   };
 
   private heuristic(a: Pos, b: Pos): number {
-    // Chebyshev distance for diagonal movement
     return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
   }
 
   private getNeighbors(p: Pos): Pos[] {
     const deltas = [
       { x: 0, y: -1 }, // north
-      { x: 0, y: 1 }, // south
-      { x: 1, y: 0 }, // east
+      { x: 0, y: 1 },  // south
+      { x: 1, y: 0 },  // east
       { x: -1, y: 0 }, // west
       { x: 1, y: -1 }, // northeast
-      { x: -1, y: -1 }, // northwest
-      { x: 1, y: 1 }, // southeast
+      { x: -1, y: -1 },// northwest
+      { x: 1, y: 1 },  // southeast
       { x: -1, y: 1 }, // southwest
     ];
-    return deltas.map((d) => ({ x: p.x + d.x, y: p.y + d.y }));
+    return deltas.map(d => ({ x: p.x + d.x, y: p.y + d.y }));
   }
 
   private getDirection(a: Pos, b: Pos): Direction {
@@ -80,25 +79,36 @@ export class Pathfinder {
     throw new Error("Invalid direction");
   }
 
+  private aggregateSegments(path: Pos[]): Segment[] {
+    if (path.length < 2) return [];
+
+    const segments: Segment[] = [];
+    let start = path[0];
+    let prevDir = this.getDirection(path[0], path[1]);
+
+    for (let i = 1; i < path.length; i++) {
+      const currDir = i < path.length - 1 ? this.getDirection(path[i], path[i + 1]) : null;
+      if (currDir !== prevDir || i === path.length - 1) {
+        segments.push({ a: start, b: path[i], direction: prevDir });
+        start = path[i];
+        prevDir = currDir!;
+      }
+    }
+
+    return segments;
+  }
+
   findPath(start: Pos, goal: Pos): Segment[] | null {
     const open: Pos[] = [start];
     const cameFrom = new Map<string, Pos>();
     const gScore = new Map<string, number>([[this.key(start), 0]]);
-    const fScore = new Map<string, number>([
-      [this.key(start), this.heuristic(start, goal)],
-    ]);
+    const fScore = new Map<string, number>([[this.key(start), this.heuristic(start, goal)]]);
 
     while (open.length > 0) {
-      // Get node with lowest fScore
-      open.sort(
-        (a, b) =>
-          (fScore.get(this.key(a)) ?? Infinity) -
-          (fScore.get(this.key(b)) ?? Infinity)
-      );
+      open.sort((a, b) => (fScore.get(this.key(a)) ?? Infinity) - (fScore.get(this.key(b)) ?? Infinity));
       const current = open.shift()!;
 
       if (current.x === goal.x && current.y === goal.y) {
-        // Reconstruct path
         const path: Pos[] = [];
         let curKey = this.key(current);
         let cur: Pos | undefined = current;
@@ -109,16 +119,7 @@ export class Pathfinder {
         }
         path.reverse();
 
-        // Convert to segments
-        const segments: Segment[] = [];
-        for (let i = 0; i < path.length - 1; i++) {
-          segments.push({
-            a: path[i],
-            b: path[i + 1],
-            direction: this.getDirection(path[i], path[i + 1]),
-          });
-        }
-        return segments;
+        return this.aggregateSegments(path);
       }
 
       for (const neighbor of this.getNeighbors(current)) {
@@ -127,17 +128,14 @@ export class Pathfinder {
         if (tentativeG < (gScore.get(this.key(neighbor)) ?? Infinity)) {
           cameFrom.set(this.key(neighbor), current);
           gScore.set(this.key(neighbor), tentativeG);
-          fScore.set(
-            this.key(neighbor),
-            tentativeG + this.heuristic(neighbor, goal)
-          );
-          if (!open.find((p) => p.x === neighbor.x && p.y === neighbor.y)) {
+          fScore.set(this.key(neighbor), tentativeG + this.heuristic(neighbor, goal));
+          if (!open.find(p => p.x === neighbor.x && p.y === neighbor.y)) {
             open.push(neighbor);
           }
         }
       }
     }
 
-    return null; // No path
+    return null;
   }
 }
