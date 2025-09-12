@@ -8,6 +8,18 @@ export class PetAI {
 
   public constructor(private readonly travelingTime: number) {}
 
+  get isIdle() {
+    return this.timer === null;
+  }
+
+  public clear() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+    }
+    this.queue = [];
+    this.timer = null;
+  }
+
   public subscribeToMovement(callback: (segment: Segment, travelingTime: number) => void) {
     this.move.push(callback);
   }

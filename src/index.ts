@@ -19,6 +19,9 @@ const SPACE_ID = "k1s3wHMOVDoLHVCo\\fstest";
 const TRAVELING_TIME = 300; // 1 block per 500 ms
 const DISTANCE_THRESHOLD = 2; // blocks away from the player
 
+const EXTENSION_CLASS = "Monster";
+const EXTENSION_CLASS_CAGE = "Monster_Cage";
+
 const game = new Game(SPACE_ID, () =>
   Promise.resolve({ apiKey: process.env.GATHER_API_KEY ?? "" })
 );
@@ -47,8 +50,18 @@ const spritesheet: WireObjectSpritesheet = {
   currentAnim: "idle-s",
 };
 
-const offsetX = spritesheet.framing?.frameWidth ? (-Math.ceil(spritesheet.framing?.frameWidth / 4) + 1) : undefined;
-const offsetY = spritesheet.framing?.frameHeight ? (-spritesheet.framing?.frameHeight / 2) : undefined;
+const offsetX = spritesheet.framing?.frameWidth
+  ? -Math.floor(spritesheet.framing?.frameWidth / 4) + 1
+  : undefined;
+const offsetY = spritesheet.framing?.frameHeight
+  ? -spritesheet.framing?.frameHeight / 2
+  : undefined;
+const width = spritesheet.framing?.frameWidth
+  ? Math.ceil(spritesheet.framing?.frameWidth / 32)
+  : 1;
+const height = spritesheet.framing?.frameHeight
+  ? Math.ceil(spritesheet.framing?.frameHeight / 32)
+  : 1;
 
 game.waitForInit().then(() => {
   const pets = new Set<string>();
@@ -56,11 +69,7 @@ game.waitForInit().then(() => {
   const me = game.getMyPlayer();
   // isPet :: MapObject -> Bool
   const isPet = (obj: MapObject | WireObject) =>
-    obj.objectPlacerId === me.id && obj.extensionClass === "PetMon";
-  const clearPets = () => {
-    deleteObjects(isPet);
-    pets.clear();
-  };
+    obj.objectPlacerId === me.id && obj.extensionClass === EXTENSION_CLASS;
 
   const finder = new Pathfinder();
   // load the collision map into the pathfinder
@@ -92,7 +101,7 @@ game.waitForInit().then(() => {
         // Set the animation of the pet
         game.updateObject(me.map, key, {
           id: objId,
-          extensionClass: "PetMon",
+          extensionClass: EXTENSION_CLASS,
           spritesheet: {
             ...spritesheet,
             currentAnim: nextAnim,
@@ -148,7 +157,7 @@ game.waitForInit().then(() => {
         const key = petsObjectKes.get(objId)!;
         game.updateObject(me.map, key, {
           id: objId,
-          extensionClass: "PetMon",
+          extensionClass: EXTENSION_CLASS,
           spritesheet: {
             ...spritesheet,
             currentAnim: "idle-s",
@@ -160,18 +169,15 @@ game.waitForInit().then(() => {
     });
   });
 
+  const clearPets = () => {
+    deleteObjects(isPet);
+    pets.clear();
+    petsObjectKes.clear();
+    ai.clear();
+    lastAnim = null;
+  };
+
   const handleMove = debounce((playerMoves: PlayerMoves) => {
-    if (playerMoves.mapId) {
-      console.log("player moved to a new map");
-
-      // load the collision map into the pathfinder
-      loadMaps(playerMoves.mapId);
-      // clean up the old ones
-      clearPets();
-      // spawn a new pet every time
-      createPet(me);
-    }
-
     pets.forEach((objId) => {
       const pet = game.getObject(objId, me.map);
       const paths = finder.findPath(
@@ -188,6 +194,32 @@ game.waitForInit().then(() => {
       ai.queueMovement(paths ?? []);
     });
   }, 250);
+
+  // Move pets around if the player moves
+  game.subscribeToEvent(
+    "playerMoves",
+    ({ playerMoves }) => {
+      if (pets.size === 0) {
+        return;
+      }
+
+      if (playerMoves.mapId) {
+        console.log("player moved to a new map");
+
+        // load the collision map into the pathfinder
+        loadMaps(playerMoves.mapId);
+        // clean up the old ones
+        clearPets();
+        // spawn a new pet every time
+        createPet(playerMoves.mapId, playerMoves.x ?? 0, playerMoves.y ?? 0);
+      }
+
+      handleMove(playerMoves);
+    },
+    ({ playerMoves }) => {
+      return game.getPlayerUidFromEncId(playerMoves.encId) === me.id;
+    }
+  );
 
   // claim pets by storing them in a set
   game.subscribeToEvent(
@@ -208,29 +240,55 @@ game.waitForInit().then(() => {
     }
   );
 
-  game.subscribeToEvent("mapSetObjectsV2", ({ mapSetObjectsV2 }) => {
-    Object.values(mapSetObjectsV2.objects)
-      .filter((obj) => !isPet(obj))
-      .forEach((obj) => {
-        console.log("found a pet!", JSON.stringify(obj));
-      });
-  });
-
-  // Move pets around if the player moves
-  game.subscribeToEvent(
-    "playerMoves",
-    ({ playerMoves }) => {
-      handleMove(playerMoves);
-    },
-    ({ playerMoves }) => {
-      return game.getPlayerUidFromEncId(playerMoves.encId) === me.id;
-    }
-  );
-
   game.subscribeToEvent(
     "playerInteractsWithObject",
     ({ playerInteractsWithObject }) => {
       console.log("player interacted with", playerInteractsWithObject);
+
+      const obj =
+        game.partialMaps[playerInteractsWithObject.mapId]?.objects?.[
+          playerInteractsWithObject.key
+        ];
+      if (!obj) {
+        console.log("player interacted with unknown object");
+        return;
+      }
+
+      const x = obj.x ?? 0;
+      const y = obj.y ?? 0;
+      if (obj.extensionClass === EXTENSION_CLASS_CAGE) {
+        console.log("player interacted with cage");
+        clearPets();
+        game.deleteObjectByKey(
+          playerInteractsWithObject.mapId,
+          playerInteractsWithObject.key
+        );
+        createPet(playerInteractsWithObject.mapId, x, y);
+        return;
+      }
+
+      console.log("player interacted with pet");
+      if (!ai.isIdle) {
+        console.log("AI is busy, ignoring");
+        return;
+      }
+
+      // clean up the pet in preparation to put it into a ball
+      clearPets();
+      createCage(playerInteractsWithObject.mapId, x, y);
+    },
+    ({ playerInteractsWithObject }) => {
+      const obj =
+        game.partialMaps[playerInteractsWithObject.mapId]?.objects?.[
+          playerInteractsWithObject.key
+        ];
+      if (obj?.objectPlacerId !== me.id) {
+        return false;
+      }
+      return (
+        obj.extensionClass === EXTENSION_CLASS ||
+        obj.extensionClass === EXTENSION_CLASS_CAGE
+      );
     }
   );
 
@@ -247,8 +305,20 @@ game.waitForInit().then(() => {
   loadMaps(me.map);
   // clean up the old ones
   clearPets();
-  // spawn a new pet every time
-  createPet(me);
+
+  // check if there is a cage in the map
+  if (
+    game.filterObjectsInSpace(
+      (obj) =>
+        obj.extensionClass === EXTENSION_CLASS_CAGE &&
+        obj.objectPlacerId === me.id
+    ).length === 0
+  ) {
+    // spawn a new pet every time
+    createPet(me.map, me.x, me.y);
+  } else {
+    console.log("found a cage, not spawning a pet");
+  }
 });
 
 const debounce = <T extends unknown[]>(
@@ -281,27 +351,40 @@ const debounce = <T extends unknown[]>(
   };
 };
 
-const createPet = (me: Player) => {
-  game.addObject(me.map, {
-    _tags: ["pet-mon"],
-    // _name: "PetMon",
-    extensionClass: "PetMon",
-    id: "PETMON_" + nanoid(),
+const createPet = (mapId: string, x: number, y: number) => {
+  game.addObject(mapId, {
+    _tags: ["monster"],
+    id: "MON_" + nanoid(),
     type: InteractionEnum_ENUM.EXTENSION,
-    x: me.x,
-    y: me.y,
-    offsetX: offsetX,
-    offsetY: offsetY,
-    width: spritesheet.framing?.frameWidth ?? 1,
-    height: spritesheet.framing?.frameHeight ?? 1,
+    extensionClass: EXTENSION_CLASS,
     normal:
       "https://cdn.gather.town/storage.googleapis.com/gather-town.appspot.com/uploads/k1s3wHMOVDoLHVCo/GESdJsGvpTDMLYFfDsfxz7",
-    // previewMessage: "Press x to pet",
-    // distThreshold: 1,
+    previewMessage: "Press x to return",
+    distThreshold: 1,
     spritesheet: spritesheet,
-    properties: {
-      // petType: "custom",
-    },
+    offsetX,
+    offsetY,
+    width,
+    height,
+    x,
+    y,
+  });
+};
+
+const createCage = (mapId: string, x: number, y: number) => {
+  game.addObject(mapId, {
+    _tags: ["monster"],
+    type: InteractionEnum_ENUM.EXTENSION,
+    id: "MON_CAGE_" + nanoid(),
+    extensionClass: EXTENSION_CLASS_CAGE,
+    normal:
+      "https://cdn.gather.town/storage.googleapis.com/gather-town.appspot.com/uploads/k1s3wHMOVDoLHVCo/mzD8uymlhRtEC1dJjRW10E",
+    previewMessage: "Press x to release",
+    distThreshold: 1,
+    width: 1,
+    height: 1,
+    x,
+    y,
   });
 };
 
