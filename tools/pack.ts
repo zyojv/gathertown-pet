@@ -1,6 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import path from "path";
 import fs from "fs";
+import fsp from "fs/promises";
 import sharp from "sharp";
 
 const [dir, output] = process.argv.slice(2);
@@ -57,37 +58,46 @@ const img2 = path.join(dir, "Walk-Anim.png");
 
 console.log(img1);
 
-sharp(img1)
-  .extract({
-    top: 0,
-    left: 0,
-    width: walk.FrameWidth,
-    height: walk.FrameHeight,
+const all = Promise.all([
+  sharp(img1)
+    .extract({
+      top: 0,
+      left: 0,
+      width: walk.FrameWidth,
+      height: walk.FrameHeight,
+    })
+    .png()
+    .toBuffer()
+    .then(async (buffer) => {
+      await fsp.writeFile(output + "-normal.png", buffer);
+    }),
+  sharp(img1)
+    .extract({
+      top: 0,
+      left: 0,
+      width: walk.FrameWidth * imagesPerRow,
+      height: walk.FrameHeight,
+    })
+    .png()
+    .toBuffer()
+    .then(async (buffer) => {
+      await fsp.writeFile(output + "-idle.png", buffer);
+    }),
+]).then(async () => {
+  const buffer = await sharp({
+    create: {
+      width: walk.FrameWidth * imagesPerRow,
+      height: walk.FrameHeight * Object.values(spritesheet.animations).length,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
   })
-  .png()
-  .pipe(fs.createWriteStream(output + "-normal.png"));
-
-// sharp(img1)
-//   .extract({
-//     top: 0,
-//     left: 0,
-//     width: walk.FrameWidth * imagesPerRow,
-//     height: walk.FrameHeight,
-//   })
-//   .png()
-//   .pipe(fs.createWriteStream(output + "-idle.png"));
-
-sharp({
-  create: {
-    width: walk.FrameWidth * imagesPerRow,
-    height: walk.FrameHeight * Object.values(spritesheet.animations).length,
-    channels: 4,
-    background: { r: 0, g: 0, b: 0, alpha: 0 },
-  },
-})
-  .composite([
-    { input: output + "-idle.png", top: 0, left: 0 }, // adjust position
-    { input: img2, top: walk.FrameHeight, left: 0 },
-  ])
-  .png()
-  .pipe(fs.createWriteStream(output + ".png"));
+    .composite([
+      { input: output + "-idle.png", top: 0, left: 0 }, // adjust position
+      { input: img2, top: walk.FrameHeight, left: 0 },
+    ])
+    .png()
+    .toBuffer()
+  
+  await fsp.writeFile(output + ".png", buffer);
+});
