@@ -5,11 +5,12 @@
   "main": "dist/src/index.js",
   "scripts": {
     "start": "tsc -b && node build/src/index.js",
-    "pack:image": "tsc -b && node build/tools/pack.js sprite/ assets/spritesheet",
+    "tool:image": "tsc -b && node build/tools/pack.js sprite/ assets/spritesheet",
+    "tool:upload": "tsc -b && node build/tools/upload.js assets/spritesheet assets/pet.json",
     "dev": "tsc -b -w"
   },
   "author": "zyojv",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "@gathertown/gather-game-client": "42.0.0",
     "@types/node": "^24.3.1",
