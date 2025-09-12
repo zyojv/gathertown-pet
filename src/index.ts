@@ -2,28 +2,26 @@ import {
   Game,
   InteractionEnum_ENUM,
   MapObject,
-  WireObject,
   PlayerMoves,
-  Player,
+  WireObject,
   WireObjectSpritesheet,
 } from "@gathertown/gather-game-client";
+import fs from "fs";
 import { nanoid } from "nanoid";
-import { Pathfinder, Direction } from "./pathfinder";
 import { PetAI } from "./follower";
-import spritesheetBase from "../assets/spritesheet.json";
+import { Direction, Pathfinder } from "./pathfinder";
+// import spritesheetBase from "../assets/spritesheet.json";
 // replace the global WebSocket with the isomorphic-ws
 global.WebSocket = require("isomorphic-ws");
 
-// replace with your spaceId, that you can edit
-const SPACE_ID = "k1s3wHMOVDoLHVCo\\fstest";
+const EXTENSION_CLASS = "Monster";
+const EXTENSION_CLASS_CAGE = "Monster_Cage";
 const TRAVELING_TIME = 300; // 1 block per 500 ms
 const DISTANCE_THRESHOLD = 2; // blocks away from the player
 
-const EXTENSION_CLASS = "Monster";
-const EXTENSION_CLASS_CAGE = "Monster_Cage";
-
-const game = new Game(SPACE_ID, () =>
-  Promise.resolve({ apiKey: process.env.GATHER_API_KEY ?? "" })
+const game = new Game(
+  process.env.GATHER_SPACE_ID ?? "k1s3wHMOVDoLHVCo\\fstest",
+  () => Promise.resolve({ apiKey: process.env.GATHER_API_KEY ?? "" })
 );
 game.connect();
 game.subscribeToConnection((connected) => console.log("connected?", connected));
@@ -44,11 +42,19 @@ const anims = new Map<Direction, string>([
 
 // @ts-ignore
 const spritesheet: WireObjectSpritesheet = {
-  ...spritesheetBase,
-  spritesheetUrl:
-    "https://cdn.gather.town/storage.googleapis.com/gather-town.appspot.com/uploads/k1s3wHMOVDoLHVCo/imMfMu9eOgurXeMu40ucBN",
+  ...JSON.parse(
+    fs.readFileSync(
+      process.env.SPRITESHEET_PATH ?? "assets/spritesheet.json",
+      "utf-8"
+    )
+  ),
   currentAnim: "idle-s",
 };
+if (!spritesheet.spritesheetUrl) {
+  console.warn("No spritesheetUrl found, using fallback");
+  spritesheet.spritesheetUrl =
+    "https://cdn.gather.town/storage.googleapis.com/gather-town.appspot.com/uploads/k1s3wHMOVDoLHVCo/imMfMu9eOgurXeMu40ucBN";
+}
 
 const offsetX = spritesheet.framing?.frameWidth
   ? -Math.floor(spritesheet.framing?.frameWidth / 4) + 1

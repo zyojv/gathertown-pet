@@ -5,8 +5,7 @@
     "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
-    "lib": ["es2019", "dom"],
-    "resolveJsonModule": true
+    "lib": ["es2019", "dom"]
   },
   "include": ["./src/**/*", "./tools/**/*", "./assets/*.json"],
   "references": []
