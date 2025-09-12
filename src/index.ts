@@ -16,7 +16,8 @@ global.WebSocket = require("isomorphic-ws");
 
 // replace with your spaceId, that you can edit
 const SPACE_ID = "k1s3wHMOVDoLHVCo\\fstest";
-const TRAVELING_TIME = 700; // 1 block per 500 ms
+const TRAVELING_TIME = 300; // 1 block per 500 ms
+const DISTANCE_THRESHOLD = 2; // blocks away from the player
 
 const game = new Game(SPACE_ID, () =>
   Promise.resolve({ apiKey: process.env.GATHER_API_KEY ?? "" })
@@ -45,6 +46,9 @@ const spritesheet: WireObjectSpritesheet = {
     "https://cdn.gather.town/storage.googleapis.com/gather-town.appspot.com/uploads/k1s3wHMOVDoLHVCo/imMfMu9eOgurXeMu40ucBN",
   currentAnim: "idle-s",
 };
+
+const offsetX = spritesheet.framing?.frameWidth ? (-Math.ceil(spritesheet.framing?.frameWidth / 4) + 1) : undefined;
+const offsetY = spritesheet.framing?.frameHeight ? (-spritesheet.framing?.frameHeight / 2) : undefined;
 
 game.waitForInit().then(() => {
   const pets = new Set<string>();
@@ -77,11 +81,8 @@ game.waitForInit().then(() => {
 
   const ai = new PetAI(TRAVELING_TIME);
   let lastAnim: string | null = null;
-  // TODO: Compute the traveling time by using the actual postion and not the distance of the individual segments
   ai.subscribeToMovement((segment, travelingTime) => {
-    // console.log("AI moving", segment);
-
-    // animator.setCurrentAnim(anims.get(segment.direction) ?? "idle-s");
+    console.log("AI moving", segment);
 
     pets.forEach((objId) => {
       const key = petsObjectKes.get(objId)!;
@@ -94,10 +95,6 @@ game.waitForInit().then(() => {
           extensionClass: "PetMon",
           spritesheet: {
             ...spritesheet,
-            // animations: {
-            //   "idle-s":
-            //     spritesheet.animations[anims.get(segment.direction) ?? "idle-s"],
-            // },
             currentAnim: nextAnim,
           },
           properties: {},
@@ -111,12 +108,55 @@ game.waitForInit().then(() => {
         {
           x: segment.b.x ?? 0,
           y: segment.b.y ?? 0,
-          xOffset: 0,
-          yOffset: 0,
+          xOffset: offsetX,
+          yOffset: offsetY,
         },
         travelingTime,
         "Linear"
       );
+    });
+  });
+  ai.subscribeToMovementDone(() => {
+    console.log("AI done");
+
+    pets.forEach((objId) => {
+      const pet = game.getObject(objId, me.map);
+      if (!pet) {
+        return;
+      }
+      // Calculate the distance to the player
+      const distance = Math.sqrt(
+        Math.pow(pet.obj.x - me.x, 2) + Math.pow(pet.obj.y - me.y, 2)
+      );
+      console.log("pet", pet.key, "is", distance, "blocks away from me");
+
+      if (distance > DISTANCE_THRESHOLD) {
+        const paths = finder.findPath(
+          {
+            x: pet?.obj.x ?? 0,
+            y: pet?.obj.y ?? 0,
+          },
+          {
+            x: me.x ?? 0,
+            y: me.y ?? 0,
+          }
+        );
+        // TODO: This will not work with multiple pets
+        ai.queueMovement(paths ?? []);
+      } else {
+        // put the pet back into idle
+        const key = petsObjectKes.get(objId)!;
+        game.updateObject(me.map, key, {
+          id: objId,
+          extensionClass: "PetMon",
+          spritesheet: {
+            ...spritesheet,
+            currentAnim: "idle-s",
+          },
+          properties: {},
+        });
+        lastAnim = "idle-s";
+      }
     });
   });
 
@@ -187,18 +227,12 @@ game.waitForInit().then(() => {
     }
   );
 
-  // game.subscribeToEvent(
-  //   "playerInteractsWithObject",
-  //   ({ playerInteractsWithObject }) => {
-  //     // console.log(
-  //       JSON.stringify(
-  //         game?.partialMaps[playerInteractsWithObject.mapId]?.objects?.[
-  //           playerInteractsWithObject.key
-  //         ]
-  //       )
-  //     );
-  //   }
-  // );
+  game.subscribeToEvent(
+    "playerInteractsWithObject",
+    ({ playerInteractsWithObject }) => {
+      console.log("player interacted with", playerInteractsWithObject);
+    }
+  );
 
   // // TODO: Add back to find out the image url of the pet
   // if (true) {
@@ -256,8 +290,10 @@ const createPet = (me: Player) => {
     type: InteractionEnum_ENUM.EXTENSION,
     x: me.x,
     y: me.y,
-    width: 1,
-    height: 1,
+    offsetX: offsetX,
+    offsetY: offsetY,
+    width: spritesheet.framing?.frameWidth ?? 1,
+    height: spritesheet.framing?.frameHeight ?? 1,
     normal:
       "https://cdn.gather.town/storage.googleapis.com/gather-town.appspot.com/uploads/k1s3wHMOVDoLHVCo/GESdJsGvpTDMLYFfDsfxz7",
     // previewMessage: "Press x to pet",

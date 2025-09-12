@@ -3,17 +3,22 @@ import { Segment } from "./pathfinder";
 export class PetAI {
   private queue: Segment[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private subscribers: ((segment: Segment, travelingTime: number) => void)[] = [];
+  private move: ((segment: Segment, travelingTime: number) => void)[] = [];
+  private done: (() => void)[] = [];
 
   public constructor(private readonly travelingTime: number) {}
 
   public subscribeToMovement(callback: (segment: Segment, travelingTime: number) => void) {
-    this.subscribers.push(callback);
+    this.move.push(callback);
+  }
+
+  public subscribeToMovementDone(callback: () => void) {
+    this.done.push(callback);
   }
 
   public queueMovement(segments: Segment[]) {
     if (this.timer) {
-      clearTimeout(this.timer);
+      return;
     }
     this.queue = segments;
     this.nextSegment();
@@ -25,11 +30,13 @@ export class PetAI {
 
   private nextSegment() {
     if (this.queue.length === 0) {
+      this.timer = null;
+      this.done.forEach(s => s());
       return null;
     }
     const segment = this.queue.shift()!;
     const travelingTime = this.computeTravelingTime(segment);
-    this.subscribers.forEach(s => s(segment, travelingTime));
+    this.move.forEach(s => s(segment, travelingTime));
     this.timer = setTimeout(() => {
       this.nextSegment();
     }, travelingTime);
