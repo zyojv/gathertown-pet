@@ -43,19 +43,19 @@ console.log(`Walk dimensions: ${walk.FrameWidth}x${walk.FrameHeight}`);
 console.log(`Idle dimensions: ${idle.FrameWidth}x${idle.FrameHeight}`);
 console.log(`Padded dimensions: ${maxFrameWidth}x${maxFrameHeight}`);
 
-// Calculate frames per row from image dimensions
-const idleFramesPerRow = Math.floor(192 / idle.FrameWidth); // 6 frames
-const walkFramesPerRow = Math.floor(128 / walk.FrameWidth); // 4 frames
+// Get actual frame counts from animation data
+const idleFrameCount = idle.Durations.Duration.length;
+const walkFrameCount = walk.Durations.Duration.length;
 
-// Use walk frames per row for output consistency
-const imagesPerRow = walkFramesPerRow;
+// Use the maximum frame count for consistency
+const maxFrameCount = Math.max(idleFrameCount, walkFrameCount);
 
-console.log(`Idle frames per row: ${idleFramesPerRow}`);
-console.log(`Walk frames per row: ${walkFramesPerRow}`);
-console.log(`Output images per row: ${imagesPerRow}`);
+console.log(`Idle frames: ${idleFrameCount}`);
+console.log(`Walk frames: ${walkFrameCount}`);
+console.log(`Max frames: ${maxFrameCount}`);
 
 const anim = (row: number, playback: number) => ({
-  sequence: [row * imagesPerRow, (row + 1) * imagesPerRow - 1],
+  sequence: [row * maxFrameCount, (row + 1) * maxFrameCount - 1],
   frameRate: playback,
   useSequenceAsRange: true,
   loop: true,
@@ -127,6 +127,22 @@ const extractAndPadFrames = async (inputPath: string, frameWidth: number, frameH
   return frames;
 };
 
+// Helper function to repeat frames to match target count
+const repeatFramesToTarget = (frames: Buffer[], targetCount: number): Buffer[] => {
+  if (frames.length >= targetCount) {
+    return frames.slice(0, targetCount); // Trim if longer
+  }
+  
+  const result: Buffer[] = [];
+  for (let i = 0; i < targetCount; i++) {
+    const sourceIndex = i % frames.length; // Cycle through available frames
+    result.push(frames[sourceIndex]);
+  }
+  
+  console.log(`Repeated ${frames.length} frames to ${targetCount} frames`);
+  return result;
+};
+
 // Helper function to create a horizontal strip from padded frames
 const createFrameStrip = async (frames: Buffer[], outputPath: string) => {
   const compositeInputs = frames.map((frame, index) => ({
@@ -149,12 +165,23 @@ const createFrameStrip = async (frames: Buffer[], outputPath: string) => {
 };
 
 (async () => {
-  // Process idle animation frames (take only first 4 frames to match walk)
-  const allIdleFrames = await extractAndPadFrames(img1, idle.FrameWidth, idle.FrameHeight, idleFramesPerRow, idleFramesPerRow);
-  const idleFrames = allIdleFrames.slice(0, imagesPerRow); // Take only first 4 frames
+  // Get actual image dimensions first
+  const idleImage = await sharp(img1).metadata();
+  const walkImage = await sharp(img2).metadata();
+
+  // Calculate frames per row from actual image dimensions
+  const idleFramesPerRow = Math.floor((idleImage.width || 0) / idle.FrameWidth);
+  const walkFramesPerRow = Math.floor((walkImage.width || 0) / walk.FrameWidth);
+
+  console.log(`Idle image: ${idleImage.width}x${idleImage.height}, ${idleFramesPerRow} frames per row`);
+  console.log(`Walk image: ${walkImage.width}x${walkImage.height}, ${walkFramesPerRow} frames per row`);
+
+  // Process idle animation frames
+  const allIdleFrames = await extractAndPadFrames(img1, idle.FrameWidth, idle.FrameHeight, idleFrameCount, idleFramesPerRow);
+  const idleFrames = repeatFramesToTarget(allIdleFrames, maxFrameCount);
   
   // Process walk animation frames  
-  const walkFrames = await extractAndPadFrames(img2, walk.FrameWidth, walk.FrameHeight, imagesPerRow * 8, walkFramesPerRow); // 8 directions, 4 frames each
+  const allWalkFrames = await extractAndPadFrames(img2, walk.FrameWidth, walk.FrameHeight, walkFrameCount * 8, walkFramesPerRow); // 8 directions
   
   // Create normal image (first idle frame)
   await fsp.writeFile(output + "-normal.png", idleFrames[0]);
@@ -165,18 +192,21 @@ const createFrameStrip = async (frames: Buffer[], outputPath: string) => {
   // Create walk strips for each direction
   const walkStripPaths: string[] = [];
   for (let direction = 0; direction < 8; direction++) {
-    const directionFrames = walkFrames.slice(direction * imagesPerRow, (direction + 1) * imagesPerRow);
+    // Get the original frames for this direction
+    const originalDirectionFrames = allWalkFrames.slice(direction * walkFrameCount, (direction + 1) * walkFrameCount);
+    // Repeat frames to match maxFrameCount
+    const directionFrames = repeatFramesToTarget(originalDirectionFrames, maxFrameCount);
     const stripPath = `${output}-walk-${direction}.png`;
     
     await sharp({
       create: {
-        width: maxFrameWidth * imagesPerRow,
+        width: maxFrameWidth * maxFrameCount,
         height: maxFrameHeight,
         channels: 4,
         background: { r: 0, g: 0, b: 0, alpha: 0 }
       }
     })
-      .composite(directionFrames.map((frame, index) => ({
+      .composite(directionFrames.map((frame: Buffer, index: number) => ({
         input: frame,
         left: index * maxFrameWidth,
         top: 0
@@ -203,7 +233,7 @@ const createFrameStrip = async (frames: Buffer[], outputPath: string) => {
   
   const buffer = await sharp({
     create: {
-      width: maxFrameWidth * imagesPerRow,
+      width: maxFrameWidth * maxFrameCount,
       height: maxFrameHeight * Object.values(spritesheet.animations).length,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 0 },
