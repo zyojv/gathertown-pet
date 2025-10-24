@@ -14,54 +14,128 @@
  *  limitations under the License.
  */
 
-import fs from "fs/promises";
+import { Game, MapObject, WireObject } from "@gathertown/gather-game-client";
+import fs from "fs";
 
-const [dir, output] = process.argv.slice(2);
-if (!dir || !output) {
-  throw new Error("Usage: upload.ts <dir> <output>");
-}
+// Replace the global WebSocket with the isomorphic-ws
+global.WebSocket = require("isomorphic-ws");
 
-const spaceID = process.env.GATHER_SPACE_ID ?? "k1s3wHMOVDoLHVCo\\fstest";
-const apiKey = process.env.GATHER_API_KEY ?? "";
+const game = new Game(
+  process.env.GATHER_SPACE_ID ?? "k1s3wHMOVDoLHVCo\\fstest",
+  () => Promise.resolve({ apiKey: process.env.GATHER_API_KEY ?? "" })
+);
 
-if (!spaceID || !apiKey) {
-  throw new Error("GATHER_SPACE_ID and GATHER_API_KEY must be set");
-}
+console.log("Connecting to Gather space...");
+game.connect();
 
-const upload = async (path: string) => {
-  const data = await fs.readFile(path);
+game.subscribeToConnection((connected) => {
+  console.log("Connected to Gather:", connected);
+  if (connected) {
+    console.log("Monitoring for new objects with image URLs...");
+  }
+});
 
-  const res = await fetch(`https://api.gather.town/api/v2/spaces/${encodeURIComponent(
-      spaceID
-    )}/uploadImage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apiKey: apiKey,
-    },
-    body: JSON.stringify({
-      bytes: data,
-      spaceId: spaceID,
-    }),
-  });
-  console.log(await res.json());
+// Set to track already seen objects to avoid duplicates
+const seenObjects = new Set<string>();
+
+// Function to extract and log image URLs from objects
+const logObjectImageUrls = (obj: MapObject | WireObject, key: string, action: string = "detected") => {
+  const objectId = obj.id || key;
+  
+  // Skip if we've already seen this object
+  if (seenObjects.has(objectId)) {
+    return;
+  }
+  seenObjects.add(objectId);
+
+  console.log(`New object ${action}: ${objectId}`);
+  console.log(`   Extension Class: ${obj.extensionClass || 'N/A'}`);
+  console.log(`   Type: ${obj.type || 'N/A'}`);
+  console.log(`   Position: (${obj.x}, ${obj.y})`);
+  console.log(`   Placer ID: ${obj.objectPlacerId || 'N/A'}`);
+
+  const imageUrls: string[] = [];
+
+  // Check for normal image URL
+  if (obj.normal) {
+    imageUrls.push(`Normal: ${obj.normal}`);
+  }
+
+  // Check for highlighted image URL
+  if (obj.highlighted) {
+    imageUrls.push(`Highlighted: ${obj.highlighted}`);
+  }
+
+  // Check for spritesheet URL
+  if (obj.spritesheet?.spritesheetUrl) {
+    imageUrls.push(`Spritesheet: ${obj.spritesheet.spritesheetUrl}`);
+  }
+
+  // Check for custom properties that might contain image URLs (MapObject has properties)
+  if ('properties' in obj && obj.properties) {
+    Object.entries(obj.properties).forEach(([propKey, propValue]) => {
+      if (typeof propValue === 'string' && 
+          (propValue.startsWith('http') || propValue.includes('cdn.gather'))) {
+        imageUrls.push(`Property "${propKey}": ${propValue}`);
+      }
+    });
+  }
+
+  if (imageUrls.length > 0) {
+    console.log("   * Image URLs found:");
+    imageUrls.forEach(url => console.log(`      ${url}`));
+    
+    // Write to log file
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      objectId,
+      key,
+      extensionClass: obj.extensionClass,
+      position: { x: obj.x, y: obj.y },
+      placerId: obj.objectPlacerId,
+      imageUrls: imageUrls.map(url => url.split(': ')[1]),
+      action
+    };
+    
+    const logFile = 'object-images.log';
+    const logLine = JSON.stringify(logEntry) + '';
+    fs.appendFileSync(logFile, logLine);
+    console.log(`   * Logged to ${logFile}`);
+  } else {
+    console.log("   * No image URLs found");
+  }
 };
 
-upload(dir + "-normal.png");
+game.waitForInit().then(() => {
+  const me = game.getMyPlayer();
+  console.log(`Initialized as player: ${me.name} (${me.id})`);
+  console.log(`Current map: ${me.map}`);
 
-// const normal = fs.readFileSync(dir + "-normal.png");
-// const spritesheet = fs.readFileSync(dir + ".png");
+  // Monitor for new objects being placed
+  game.subscribeToEvent(
+    "mapSetObjectsV2",
+    ({ mapSetObjectsV2 }) => {
+      console.log(`🆕 Objects updated on map: ${mapSetObjectsV2.mapId}`);
+      
+      Object.entries(mapSetObjectsV2.objects).forEach(([key, obj]) => {
+        logObjectImageUrls(obj, key, "placed");
+      });
+    }
+  );
 
-// const data = JSON.parse(fs.readFileSync(dir + ".json", "utf-8"));
+  console.log("Setup complete! Monitoring for object changes...");
+  console.log("Image URLs will be logged to 'object-images.log'");
+});
 
-// fs.writeFileSync(
-//   output,
-//   JSON.stringify(
-//     {
-//       normal: "",
-//       spritesheet: data,
-//     },
-//     null,
-//     2
-//   )
-// );
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('Shutting down object monitor...');
+  game.disconnect();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('Shutting down object monitor...');
+  game.disconnect();
+  process.exit(0);
+});
