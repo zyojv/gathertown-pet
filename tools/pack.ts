@@ -186,6 +186,10 @@ const createFrameStrip = async (frames: Buffer[], outputPath: string) => {
   // Create normal image (first idle frame)
   await fsp.writeFile(output + "-normal.png", idleFrames[0]);
   
+  // Create title image (single idle frame as PNG file)
+  await fsp.writeFile(output + "-title.png", idleFrames[0]);
+  console.log(`Created title image: ${output}-title.png`);
+  
   // Create idle strip
   await createFrameStrip(idleFrames, output + "-idle.png");
   
@@ -245,10 +249,11 @@ const createFrameStrip = async (frames: Buffer[], outputPath: string) => {
   
   await fsp.writeFile(output + ".png", buffer);
   
-  // Clean up temporary files
+  // Clean up temporary files (but keep title image)
   const cleanupPromises = [
     fsp.unlink(output + "-idle.png").catch(() => {}),
     fsp.unlink(output + "-normal.png").catch(() => {}),
+    // Note: keeping output + "-title.png" as it's the final title image output
   ];
   
   // Add walk strip cleanup
